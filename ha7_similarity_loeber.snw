@@ -1,0 +1,302 @@
+\documentclass[a4paper,10pt]{article}
+\usepackage[utf8]{inputenc}
+
+%opening
+\title{PDNA 7}
+\author{Ulrike Löber}
+
+\begin{document}
+
+\maketitle
+
+\section{Write the function for determining similarity}
+\subsection{The function takes as argument: (i) a data matrix, (ii) name of similarity measure}
+I implement a function which ask for a p-value if you choose "Minkowski" as method. The other methods need no specification of p. If one choose a not implemented method you will be asked to choose one.
+<<>>=
+similar=function(matr,method){
+  if (method == "minkowski"){
+ 	 p=as.integer(readline("please select p-value for minkowski correlation: "))
+ 	 return(minkowski(matr,p))
+  }
+  else if(method == "firstorderpc"){
+  	return(fo_partial_cor(matr))
+  }
+  else if(method == "fullpc"){
+  	return(full_part(matr))
+  }
+  else if(method == "mutual"){
+  	return(mutual_information(matr))
+  }
+  else{
+  	print("no method choosen, use function like similar(matrix,method), with method=minkowski,firstorderpc,fullpc")
+  	print("to escape type exit")
+  	 method=readline("please select method: ")
+  	   if(method == "minkowski"){
+  	   		print("you choose minkowski")
+ 			 p=as.integer(readline("please select p-value for minkowski correlation: "))
+ 	 		return(minkowski(matr,p))
+  		}
+  		else if(method == "firstorderpc"){
+  			print("you choose first order partial correlation")
+  			return(fo_partial_cor(matr))
+  		}
+  		else if(method == "fullpc"){
+  			print("you choose full controll partial correlation")
+  			return(full_part(matr))
+  		}
+  		else if(method == "mutual"){
+  			print("you choose mutual information")
+  			return(mutual_information(matr))
+  		}
+  		else if(method == "exit"){
+  			print("you decided to quit function")
+  		}
+  }
+	 
+}
+@
+\subsection{Implement Minkwoski distance, first-order partial correlation, partial correlation with full control, mutual information, and information content. }
+<<>>=
+#source("http://bioconductor.org/biocLite.R")
+#biocLite("multtest")
+#library("multtest")
+data(golub)
+AML=golub[,(golub.cl==1)]
+ALL=golub[,(golub.cl==0)]
+#############################MINKOWSKI#######################################
+#calculation minkowski distance of two sets of values
+minkowski=function(matr,p){
+  minkowski_matr=matrix(nrow=nrow(matr),ncol=nrow(matr))
+  for(j in 1:nrow(matr)){
+    for(k in 1:nrow(matr)){
+      if(j!=k){
+	set_1=matr[j,]	#set_1 and set_2 are two vectors of same length to compare
+	set_2=matr[k,]
+#calculate the distance of each value to the corresponding value of same position
+	correlations=c()
+	minkowski_dist=c()
+	for(i in 1:length(set_1)){
+	  correlation=(abs(set_1[i]-set_2[i]))^p
+	  correlations=c(correlations,correlation)
+	  sum_of_correlations=sum(correlations)
+	  temp=sum_of_correlations^(1/p)
+	  minkowski_dist=temp
+	}
+	minkowski_matr[j,k]=minkowski_dist
+      }
+      else{
+	minkowski_matr[j,k]=0
+      }
+    }
+  }
+  return(minkowski_matr)
+}
+#############################MINKOWSKI#######################################
+@
+<<>>=
+######################FIRST ORDER PARTIAL CORRELATION##############################
+#calculate first partial correlation
+
+fo_partial_cor=function(matr){
+  part_matr=matrix(ncol=nrow(matr),nrow=nrow(matr))
+  for(i in 1:nrow(matr)){
+    for(j in 1:nrow(matr)){
+      for(k in 1:nrow(matr)){
+        if(i != j && j != k && i != k && j<i){
+	  set_1=matr[i,]	#set_1,2,3 are three vectors of same length to compare
+	  set_2=matr[j,]	#this would be my "reference"
+	  set_3=matr[k,]
+#calculate residues of set_1 to set_2 and set_2 to set_3 and set_1 to set_3
+	  cor_1_2=sum((set_1-mean(set_1))*(set_2-mean(set_2)))/(sqrt(sum((set_1-mean(set_1))^2)*sum((set_2-mean(set_2))^2)))
+	  cor_2_3=sum((set_3-mean(set_3))*(set_2-mean(set_2)))/(sqrt(sum((set_3-mean(set_3))^2)*sum((set_2-mean(set_2))^2)))
+	  cor_1_3=sum((set_3-mean(set_3))*(set_1-mean(set_1)))/(sqrt(sum((set_3-mean(set_3))^2)*sum((set_1-mean(set_1))^2)))
+
+#now calculate the partial correlation
+	  r1_2.3=(cor_1_2-(cor_1_3*cor_2_3))/sqrt(1-(cor_1_3^2))*sqrt(1-(cor_2_3^2))
+	  #r2_3.1=(cor_2_3-cor_2_1*cor_3_1)/sqrt(1-(cor_2_1^2))*sqrt(1-(cor_3_1^2))
+	  #r1_3.2=(cor_3_2-cor_1_2*cor_3_2)/sqrt(1-(cor_1_2^2))*sqrt(1-(cor_3_2^2))
+	  part_matr[i,j]=r1_2.3
+	  part_matr[j,i]=r1_2.3
+	}
+	if(i==j){
+	  part_matr[i,j]=0
+	}
+      }
+    }
+  }
+  return(part_matr)
+}
+######################FIRST ORDER PARTIAL CORRELATION##############################
+@
+<<>>=
+######################FULL CONTROLL PARTIAL CORRELATION##############################
+full_part=function(matr){
+  cov_matr=cov(t(matr))
+library(MASS)  
+  inv_cov=ginv(cov_matr)
+  full_part_mat=matrix(ncol=ncol(inv_cov),nrow=nrow(inv_cov))
+  for (i in 1:ncol(cov_matr)){
+    for (j in 1:ncol(cov_matr)){
+      full_part_mat[i,j]=1-abs((-1)*inv_cov[i,j]/sqrt((inv_cov[i,i]*inv_cov[j,j])))
+    }
+  }
+  return(full_part_mat)
+}
+######################FULL CONTROLL PARTIAL CORRELATION##############################
+@
+
+<<>>=
+######################MUTUAL INFORMATION#############################################
+mutual_information=function(matr){
+	mutual_inf=matrix(nrow=nrow(matr),ncol=nrow(matr))
+	for (i in 1:nrow(matr)){
+	      for (j in 1:nrow(matr)){
+		  if (i!=j){
+		    set1=matr[i,]
+		    set2=matr[j,]
+		    temp1=cut(set1,breaks=4,labels=c(1:4))
+		    temp2=cut(set2,breaks=4,labels=c(1:4))
+		    P=matrix(0,nrow=4,ncol=4)
+		    for (k in 1:length(temp1)){
+		      x=temp1[k]
+		      y=temp2[k]
+		      P[x,y]=P[x,y]+1
+		      P=P/(length(temp1))
+		    }
+		    P=cbind(P,margin.table(P,margin=1))
+		    P=rbind(P,margin.table(P,margin=2))
+		    MI=0
+		    for (a in 1:4){
+		      for (b in 1:4){
+			  if(P[a,b]!=0){
+			    MI = MI+ (P[a,b]*log(P[a,b]/(P[x,5]*P[a,5]))) 
+			   }
+			}
+		    }
+		    mutual_inf[i,j]=MI
+		}		
+		else{
+		    mutual_inf[i,j]=0
+		  }
+	    }
+	  }
+	return(mutual_inf)
+}  
+######################MUTUAL INFORMATION#############################################
+@
+
+The "similar"-function asks which p-value to use with minkowski. I allways choose 2, so its "Manhattan". To show that the function produces the right results, I demonstrated with the first 6 genes for each class.
+<<>>=
+similar(AML[1:6,],"minkowski")
+similar(AML[1:6,],"firstorderpc")
+similar(AML[1:6,],"fullpc")
+similar(AML[1:6,],"mutual")
+#####controll######
+similar(AML[1:6,],"anothermethod")
+#####controll######
+similar(ALL[1:6,],"minkowski")
+similar(ALL[1:6,],"firstorderpc")
+similar(ALL[1:6,],"fullpc")
+similar(ALL[1:6,],"mutual")
+@
+\section{Test the function on the given data set}
+<<>>=
+####AML####
+AML_mink=similar(AML[1:40,],"minkowski")
+AML_fopc=similar(AML[1:40,],"firstorderpc")
+AML_fullpc=similar(AML[1:40,],"fullpc")
+AML_mutual=similar(AML[1:40,],"mutual")
+####ALL#####
+ALL_mink=similar(ALL[1:40,],"minkowski")
+ALL_fopc=similar(ALL[1:40,],"firstorderpc")
+ALL_fullpc=similar(ALL[1:40,],"fullpc")
+ALL_mutual=similar(ALL[1:40,],"mutual")
+@
+\begin{itemize}
+\item Report number of similar pairs above a user-specified threshold \\
+"i" is the thereshold I set. I choose theresholds between -1 and 2 to indicate that the correlations are in the right scope.
+<<>>=
+i=(-1)
+while (i<=2){
+	
+	print(paste("for i =",i,"and method=minkowski:",length(which(AML_mink>=i))))
+	print(paste("for i =",i,"and method=fopc:",length(which(AML_fopc>=i))))
+	print(paste("for i =",i,"and method=fullpc:",length(which(AML_fullpc>=i))))
+	print(paste("for i =",i,"and method=mutual:",length(which(AML_mutual>=i))))
+	print(paste("for i =",i,"and method=minkowski:",length(which(ALL_mink>=i))))
+	print(paste("for i =",i,"and method=fopc:",length(which(ALL_fopc>=i))))
+	print(paste("for i =",i,"and method=fullpc:",length(which(ALL_fullpc>=i))))
+	print(paste("for i =",i,"and method=mutual:",length(which(ALL_mutual>=i))))
+	i=i+0.5
+}
+print(paste("for i =",5,"and method=minkowski:",length(which(AML_mink>=5))))
+print(paste("for i =",10,"and method=minkowski:",length(which(AML_mink>=10))))
+@
+1,600 is 40 x 40 so almost all genes are dependent to each other with this theresholds. The other extremum is 0, what describes a thereshold underneath all genes seem to be independent. Minkowski values have no upper bound, but are greater then zero.
+\item Determine the sum of entry-wise squared difference between each pair of distance matrices
+<<>>=
+sum(abs(AML_mink)-abs(AML_fopc)^2)
+sum(abs(AML_mink)-abs(AML_fullpc)^2)
+sum(abs(AML_mink)-abs(AML_mutual)^2)
+sum(abs(AML_fopc)-abs(AML_fullpc)^2)
+sum(abs(AML_fopc)-abs(AML_mutual)^2)
+sum(abs(AML_fullpc)-abs(AML_mutual)^2)
+
+sum(abs(ALL_mink)-abs(ALL_fopc)^2)
+sum(abs(ALL_mink)-abs(ALL_fullpc)^2)
+sum(abs(ALL_mink)-abs(ALL_mutual)^2)
+sum(abs(ALL_fopc)-abs(ALL_fullpc)^2)
+sum(abs(ALL_fopc)-abs(ALL_mutual)^2)
+sum(abs(ALL_fullpc)-abs(ALL_mutual)^2)
+@
+\item Use Mantel correlation to investigate the similarity between each pair of distance matrices 
+<<>>=
+#install.packages("ade4")
+#library(ade4)
+#convert matrices into distancematrices to use mantel.rtest
+dAML1=as.dist(AML_mink)
+dAML2=as.dist(AML_fopc)
+dAML3=as.dist(AML_fullpc)
+dAML4=as.dist(AML_mutual)
+dALL1=as.dist(ALL_mink)
+dALL2=as.dist(ALL_fopc)
+dALL3=as.dist(ALL_fullpc)
+dALL4=as.dist(ALL_mutual)
+
+AML_mink2=mantel.rtest(dAML1,dAML1,nrepet=99)
+AML_fopc2=mantel.rtest(dAML2,dAML2,nrepet=99)
+AML_fulloc2=mantel.rtest(dAML3,dAML3,nrepet=99)
+AML_mutual2=mantel.rtest(dAML4,dAML4,nrepet=99)
+AML_mink_fopc=mantel.rtest(dAML1,dAML2,nrepet=99)
+AML_mink_fullpc=mantel.rtest(dAML1,dAML3,nrepet=99)
+AML_mink_mutual=mantel.rtest(dAML1,dAML4,nrepet=99)
+AML_fopc_fullpc=mantel.rtest(dAML2,dAML3,nrepet=99)
+AML_fopc_mutual=mantel.rtest(dAML2,dAML4,nrepet=99)
+AML_fullpc_mutual=mantel.rtest(dAML3,dAML4,nrepet=99)
+
+ALL_mink2=mantel.rtest(dALL1,dALL1,nrepet=99)
+ALL_fopc2=mantel.rtest(dALL2,dALL2,nrepet=99)
+ALL_fulloc2=mantel.rtest(dALL3,dALL3,nrepet=99)
+ALL_mutual2=mantel.rtest(dALL4,dALL4,nrepet=99)
+ALL_mink_fopc=mantel.rtest(dALL1,dALL2,nrepet=99)
+ALL_mink_fullpc=mantel.rtest(dALL1,dALL3,nrepet=99)
+ALL_mink_mutual=mantel.rtest(dALL1,dALL4,nrepet=99)
+ALL_fopc_fullpc=mantel.rtest(dALL2,dALL3,nrepet=99)
+ALL_fopc_mutual=mantel.rtest(dALL2,dALL4,nrepet=99)
+ALL_fullpc_mutual=mantel.rtest(dALL3,dALL4,nrepet=99)
+@
+\item Visualize the findings from the Mantel correlation as a heatmap
+
+<<fig=TRUE>>=
+vec=c(AML_mink2$obs,AML_fopc2$obs,AML_fulloc2$obs,AML_mutual2$obs,AML_mink_fopc$obs,AML_mink_fullpc$obs,AML_mink_mutual$obs,AML_fopc_fullpc$obs,AML_fopc_mutual$obs,AML_fullpc_mutual$obs)
+heatmap_AML=matrix(vec,nrow=4,ncol=4)
+heatmap(heatmap_AML)
+@
+<<fig=TRUE>>=
+vec=c(ALL_mink2$obs,ALL_fopc2$obs,ALL_fulloc2$obs,ALL_mutual2$obs,ALL_mink_fopc$obs,ALL_mink_fullpc$obs,ALL_mink_mutual$obs,ALL_fopc_fullpc$obs,ALL_fopc_mutual$obs,ALL_fullpc_mutual$obs)
+heatmap_ALL=matrix(vec,nrow=4,ncol=4)
+heatmap(heatmap_ALL)
+@
+\end{itemize}
+
+\end{document}
